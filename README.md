@@ -46,7 +46,7 @@ The optimizer performs the following steps:
 ### Important behavior
 
 * Safe to run **multiple times** on the same file
-* Will not “break” SVGs that already contain merged rectangles
+* Will not break SVGs that already contain merged rectangles
 * Designed for deterministic, stable output
 
 ---
@@ -65,22 +65,23 @@ The optimizer performs the following steps:
 
 ---
 
-## File & Folder Pickers (Important)
+## Platform Notes
 
-### Linux behavior
+### Windows
 
-On Linux, the GUI **prefers native system dialogs**:
+* Uses Tk dialogs
+* May show SmartScreen warnings (unsigned)
 
-1. **Zenity** (GNOME / GTK)
-2. **KDialog** (KDE)
+### macOS
 
-If neither is available, it **falls back to Tk’s file dialogs**.
+* Uses native file dialogs
+* May require “Open Anyway” for unsigned apps
 
-### Why this matters
+### Linux
 
+* GUI **prefers native system dialogs** Zenity/KDialog
+* If neither is available, it **falls back to Tk’s file dialogs**.
 * Native dialogs avoid Tk’s built-in “Directory:” dropdown UX issues
-* Canceling a native dialog **does not** trigger a fallback dialog
-* Fallback only occurs if no system picker is available
 
 ---
 
@@ -137,33 +138,13 @@ Log entries include:
 * Optional (Linux):
 
   * `zenity` or `kdialog`
-  * `tkinterdnd2` (for drag & drop)
+  * `tkinterdnd2`
 
 ### Run
 
 ```bash
 python3 svg_optimizer_gui.py
 ```
-
----
-
-## Platform Notes
-
-### Windows
-
-* Uses Tk dialogs
-* May show SmartScreen warnings (unsigned)
-
-### macOS
-
-* Uses native file dialogs
-* May require “Open Anyway” for unsigned apps
-
-### Linux
-
-* Prefers Zenity/KDialog
-* Falls back cleanly to Tk dialogs
-* No duplicate dialog opening
 
 ---
 
