@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest, ubuntu-20.04]
 
     runs-on: ${{ matrix.os }}
 
@@ -51,6 +51,7 @@ jobs:
         if: env.INCLUDE_DND == 'true'
         run: python -m pip install tkinterdnd2
 
+      # Windows -> zip exe
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -58,33 +59,7 @@ jobs:
           $args = @("--noconfirm","--clean","--windowed","--onefile","--name",$env:APP_NAME,"svg_optimizer_gui.py")
           if ($env:INCLUDE_DND -eq "true") { $args += @("--collect-data","tkinterdnd2") }
           pyinstaller @args
-          New-Item -ItemType Directory -Force -Path out | Out-Null
-          Copy-Item "dist\$env:APP_NAME.exe" "out\" -Force
-          Compress-Archive -Path "out\*" -DestinationPath "$env:APP_NAME-Windows.zip" -Force
-
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          ARGS=(--noconfirm --clean --windowed --name "$APP_NAME" svg_optimizer_gui.py)
-          if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
-          pyinstaller "${ARGS[@]}"
-          mkdir -p out
-          cp -R "dist/${APP_NAME}.app" out/
-          zip -r "${APP_NAME}-macOS.zip" out
-
-      - name: Build (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
-          if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
-          pyinstaller "${ARGS[@]}"
-          mkdir -p out
-          cp "dist/${APP_NAME}" out/
-          zip -r "${APP_NAME}-Linux.zip" out
+          Compress-Archive -Path "dist\$env:APP_NAME.exe" -DestinationPath "$env:APP_NAME-Windows.zip" -Force
 
       - name: Upload build artifact (Windows)
         if: runner.os == 'Windows'
@@ -93,6 +68,17 @@ jobs:
           name: release-Windows
           path: ${{ env.APP_NAME }}-Windows.zip
 
+      # macOS -> zip .app
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARGS=(--noconfirm --clean --windowed --name "$APP_NAME" svg_optimizer_gui.py)
+          if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
+          pyinstaller "${ARGS[@]}"
+          zip -r "${APP_NAME}-macOS.zip" "dist/${APP_NAME}.app"
+
       - name: Upload build artifact (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -100,12 +86,62 @@ jobs:
           name: release-macOS
           path: ${{ env.APP_NAME }}-macOS.zip
 
-      - name: Upload build artifact (Linux)
+      # Linux (ubuntu-20.04) -> AppImage
+      - name: Build (Linux) -> AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          python -m pip install pillow
+
+          ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
+          if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
+          pyinstaller "${ARGS[@]}"
+          chmod +x "dist/${APP_NAME}"
+
+          APPDIR="${APP_NAME}.AppDir"
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin" \
+                   "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+
+          cp "dist/${APP_NAME}" "$APPDIR/usr/bin/${APP_NAME}"
+
+          python - <<'PY'
+          from PIL import Image, ImageDraw
+          img = Image.new("RGBA", (256, 256), (32, 32, 32, 255))
+          d = ImageDraw.Draw(img)
+          d.rectangle([24, 24, 232, 232], outline=(200, 200, 200, 255), width=6)
+          d.text((40, 110), "SVG", fill=(240, 240, 240, 255))
+          img.save("icon.png")
+          PY
+          cp icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
+
+          cat > "$APPDIR/usr/share/applications/${APP_NAME}.desktop" <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=SVG Pixel-Rect Optimizer
+          Exec=${APP_NAME}
+          Icon=${APP_NAME}
+          Categories=Utility;Graphics;
+          Terminal=false
+          EOF
+
+          ln -sf "usr/bin/${APP_NAME}" "$APPDIR/AppRun"
+
+          curl -L -o appimagetool.AppImage \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
+          ./appimagetool.AppImage --appimage-extract >/dev/null
+          ./squashfs-root/AppRun "$APPDIR" "${APP_NAME}-Linux-x86_64.AppImage"
+
+      - name: Upload build artifact (Linux AppImage)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: release-Linux
-          path: ${{ env.APP_NAME }}-Linux.zip
+          name: release-Linux-AppImage
+          path: ${{ env.APP_NAME }}-Linux-x86_64.AppImage
 
   release:
     runs-on: ubuntu-latest
@@ -131,5 +167,5 @@ jobs:
           files: |
             ${{ env.APP_NAME }}-Windows.zip
             ${{ env.APP_NAME }}-macOS.zip
-            ${{ env.APP_NAME }}-Linux.zip
+            ${{ env.APP_NAME }}-Linux-x86_64.AppImage
 
