@@ -1,0 +1,106 @@
+name: Build executables
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      include_tkinterdnd2:
+        description: "Include tkinterdnd2 (drag & drop) in the build"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      PYTHON_VERSION: "3.11"
+      APP_NAME: "svg_pixel_rect_optimizer_gui"
+      INCLUDE_DND: ${{ github.event_name == 'workflow_dispatch' && inputs.include_tkinterdnd2 || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install pyinstaller
+
+      - name: Install tkinterdnd2 (optional)
+        if: env.INCLUDE_DND == 'true'
+        run: |
+          python -m pip install tkinterdnd2
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $args = @("--noconfirm","--clean","--windowed","--onefile","--name",$env:APP_NAME,"svg_optimizer_gui.py")
+          if ($env:INCLUDE_DND -eq "true") {
+            $args += @("--collect-data","tkinterdnd2")
+          }
+          pyinstaller @args
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item "dist\$env:APP_NAME.exe" "out\" -Force
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARGS=(--noconfirm --clean --windowed --name "$APP_NAME" svg_optimizer_gui.py)
+          if [[ "$INCLUDE_DND" == "true" ]]; then
+            ARGS+=(--collect-data tkinterdnd2)
+          fi
+          pyinstaller "${ARGS[@]}"
+          mkdir -p out
+          cp -R "dist/${APP_NAME}.app" out/
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
+          if [[ "$INCLUDE_DND" == "true" ]]; then
+            ARGS+=(--collect-data tkinterdnd2)
+          fi
+          pyinstaller "${ARGS[@]}"
+          mkdir -p out
+          cp "dist/${APP_NAME}" out/
+
+      - name: Zip artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "out\*" -DestinationPath "${env:APP_NAME}-${{ runner.os }}.zip" -Force
+
+      - name: Zip artifact (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          zip -r "${APP_NAME}-${{ runner.os }}.zip" out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ runner.os }}
+          path: ${{ env.APP_NAME }}-${{ runner.os }}.zip
+          retention-days: 30
