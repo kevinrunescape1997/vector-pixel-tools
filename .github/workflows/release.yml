@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0). Only used for manual runs."
+        description: "Tag to release (e.g. v1.0.2). Only used for manual runs."
         required: true
         type: string
       include_tkinterdnd2:
         description: "Include tkinterdnd2 (drag & drop) in the build"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -23,14 +23,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-20.04]
+        os: [windows-latest, macos-latest, ubuntu-22.04]
 
     runs-on: ${{ matrix.os }}
 
     env:
-      PYTHON_VERSION: "3.11"
+      PYTHON_VERSION: "3.10"
       APP_NAME: "svg_pixel_rect_optimizer_gui"
-      INCLUDE_DND: ${{ github.event_name == 'workflow_dispatch' && inputs.include_tkinterdnd2 || 'false' }}
+      # For tag releases: default to true.
+      # For manual runs: follow the input.
+      INCLUDE_DND: ${{ github.event_name == 'workflow_dispatch' && inputs.include_tkinterdnd2 || 'true' }}
 
     steps:
       - name: Checkout
@@ -44,8 +46,16 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
+      - name: Linux system deps (Tk)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
       - name: Install build dependencies
-        run: python -m pip install pyinstaller
+        run: python -m pip install pyinstaller pillow
 
       - name: Install tkinterdnd2 (optional)
         if: env.INCLUDE_DND == 'true'
@@ -86,14 +96,12 @@ jobs:
           name: release-macOS
           path: ${{ env.APP_NAME }}-macOS.zip
 
-      # Linux (ubuntu-20.04) -> AppImage
+      # Linux (ubuntu-22.04) -> AppImage
       - name: Build (Linux) -> AppImage
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euxo pipefail
-
-          python -m pip install pillow
 
           ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
           if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
@@ -102,9 +110,10 @@ jobs:
 
           APPDIR="${APP_NAME}.AppDir"
           rm -rf "$APPDIR"
-          mkdir -p "$APPDIR/usr/bin" \
-                   "$APPDIR/usr/share/applications" \
-                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          mkdir -p \
+            "$APPDIR/usr/bin" \
+            "$APPDIR/usr/share/applications" \
+            "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
           cp "dist/${APP_NAME}" "$APPDIR/usr/bin/${APP_NAME}"
 
@@ -152,6 +161,9 @@ jobs:
       TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
     steps:
+      - name: Checkout (for README asset)
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -168,4 +180,5 @@ jobs:
             ${{ env.APP_NAME }}-Windows.zip
             ${{ env.APP_NAME }}-macOS.zip
             ${{ env.APP_NAME }}-Linux-x86_64.AppImage
+            README.md
 

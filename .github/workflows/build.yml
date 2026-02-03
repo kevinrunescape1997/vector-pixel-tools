@@ -2,7 +2,7 @@ name: Build executables
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       include_tkinterdnd2:
@@ -15,12 +15,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-20.04]
+        os: [windows-latest, macos-latest, ubuntu-22.04]
 
     runs-on: ${{ matrix.os }}
 
     env:
-      PYTHON_VERSION: "3.11"
+      PYTHON_VERSION: "3.10"
       APP_NAME: "svg_pixel_rect_optimizer_gui"
       INCLUDE_DND: ${{ github.event_name == 'workflow_dispatch' && inputs.include_tkinterdnd2 || 'false' }}
 
@@ -36,8 +36,16 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
+      - name: Linux system deps (Tk)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
       - name: Install build dependencies
-        run: python -m pip install pyinstaller
+        run: python -m pip install pyinstaller pillow
 
       - name: Install tkinterdnd2 (optional)
         if: env.INCLUDE_DND == 'true'
@@ -80,30 +88,28 @@ jobs:
           path: ${{ env.APP_NAME }}-macOS.zip
           retention-days: 30
 
-      # ---------------- Linux (ubuntu-20.04) ----------------
+      # ---------------- Linux (ubuntu-22.04) ----------------
       - name: Build (Linux) -> AppImage
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euxo pipefail
 
-          # Build a onefile binary on ubuntu-20.04 (better glibc compatibility)
           ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
           if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
           pyinstaller "${ARGS[@]}"
           chmod +x "dist/${APP_NAME}"
 
-          # Create AppDir structure
           APPDIR="${APP_NAME}.AppDir"
           rm -rf "$APPDIR"
-          mkdir -p "$APPDIR/usr/bin" \
-                   "$APPDIR/usr/share/applications" \
-                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          mkdir -p \
+            "$APPDIR/usr/bin" \
+            "$APPDIR/usr/share/applications" \
+            "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-          # Copy binary
           cp "dist/${APP_NAME}" "$APPDIR/usr/bin/${APP_NAME}"
 
-          # Generate a simple icon (so the .desktop file has something valid)
+          # Create a simple icon (keeps repo lightweight; replace with a real PNG later if desired)
           python - <<'PY'
           from PIL import Image, ImageDraw
           img = Image.new("RGBA", (256, 256), (32, 32, 32, 255))
@@ -112,37 +118,8 @@ jobs:
           d.text((40, 110), "SVG", fill=(240, 240, 240, 255))
           img.save("icon.png")
           PY
-          # Pillow is not guaranteed preinstalled; install it on demand.
-        continue-on-error: false
-
-      - name: Install Pillow (Linux) for icon generation
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python -m pip install pillow
-
-      - name: Finalize AppImage (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          APPDIR="${APP_NAME}.AppDir"
-
-          # Generate icon (now that pillow is installed)
-          python - <<'PY'
-          from PIL import Image, ImageDraw
-          img = Image.new("RGBA", (256, 256), (32, 32, 32, 255))
-          d = ImageDraw.Draw(img)
-          d.rectangle([24, 24, 232, 232], outline=(200, 200, 200, 255), width=6)
-          d.text((40, 110), "SVG", fill=(240, 240, 240, 255))
-          img.save("icon.png")
-          PY
-
           cp icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/${APP_NAME}.png"
 
-          # .desktop launcher (embedded in AppImage)
           cat > "$APPDIR/usr/share/applications/${APP_NAME}.desktop" <<EOF
           [Desktop Entry]
           Type=Application
@@ -153,15 +130,13 @@ jobs:
           Terminal=false
           EOF
 
-          # AppRun: point to the binary
           ln -sf "usr/bin/${APP_NAME}" "$APPDIR/AppRun"
 
-          # Download appimagetool and build an AppImage
           curl -L -o appimagetool.AppImage \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool.AppImage
 
-          # Avoid needing FUSE by extracting the tool first
+          # Avoid FUSE requirement by extracting
           ./appimagetool.AppImage --appimage-extract >/dev/null
           ./squashfs-root/AppRun "$APPDIR" "${APP_NAME}-Linux-x86_64.AppImage"
 
