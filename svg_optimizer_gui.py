@@ -10,7 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from svg_pixel_rect_optimizer import optimize_svg_rects
+from svg_pixel_rect_optimizer import optimize_svg_rects_bytes, write_svgz
 
 
 # -----------------------------
@@ -39,7 +39,8 @@ def find_svgs_in_folder(folder: Path, recursive: bool, skip_outputs: bool) -> li
 @dataclass
 class JobResult:
     input_path: Path
-    output_path: Path
+    output_svg: Path
+    output_svgz: Path | None
     ok: bool
     message: str
 
@@ -76,7 +77,7 @@ def system_pick_folder(title: str) -> str | None:
         )
         if p.returncode != 0:
             return ""  # cancelled
-        return p.stdout.strip()  # can be "" if something odd, treat as cancelled by caller
+        return p.stdout.strip()
 
     if shutil.which("kdialog"):
         p = subprocess.run(
@@ -98,7 +99,6 @@ def system_pick_folder(title: str) -> str | None:
 
 def system_pick_files(title: str, patterns: list[str]) -> list[str] | None:
     if shutil.which("zenity"):
-        # Example filter: "*.svg | *.svg"
         filt = " ".join(patterns) if patterns else "*"
         p = subprocess.run(
             [
@@ -231,11 +231,12 @@ class App:
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         w = min(1750, int(sw * 0.95))
-        h = min(870, int(sh * 0.90))
+        h = min(1000, int(sh * 0.92))
         self.root.geometry(f"{w}x{h}")
 
         self._setup_theme()
         self._setup_toggle_styles()
+        self._setup_radio_toggle_styles()
 
         self.files: list[Path] = []
 
@@ -244,6 +245,11 @@ class App:
         self.preserve_tree = tk.BooleanVar(value=True)
         self.preserve_names = tk.BooleanVar(value=True)
         self.skip_outputs = tk.BooleanVar(value=True)
+
+        # Output mode:
+        #   "svg"  -> write optimized .svg only
+        #   "svgz" -> write optimized .svg and also .svgz (gzip level 9)
+        self.output_mode = tk.StringVar(value="svg")
 
         self.status = tk.StringVar(value="Ready.")
         self.progress = tk.DoubleVar(value=0.0)
@@ -300,6 +306,52 @@ class App:
         except Exception:
             pass
 
+    def _setup_radio_toggle_styles(self):
+        self._radio_style = "OnOff.TRadiobutton"
+        style = ttk.Style(self.root)
+
+        style.layout(
+            self._radio_style,
+            [
+                (
+                    "Radiobutton.padding",
+                    {
+                        "sticky": "nswe",
+                        "children": [
+                            ("Radiobutton.label", {"sticky": "nswe"})
+                        ],
+                    },
+                )
+            ],
+        )
+
+        style.configure(
+            self._radio_style,
+            padding=(10, 4),
+            indicatoron=False,   # removes radio circle
+            borderwidth=1,
+            relief="solid",
+            foreground="#ffffff",
+        )
+
+        style.map(
+            self._radio_style,
+            background=[
+                ("active", "selected", "#00b980"),
+                ("active", "!selected", "#e07000"),
+                ("selected", "#009E73"),
+                ("!selected", "#D55E00"),
+            ],
+            foreground=[
+                ("selected", "#ffffff"),
+                ("!selected", "#ffffff"),
+            ],
+            relief=[
+                ("active", "solid"),
+                ("selected", "solid"),
+                ("!selected", "solid"),
+            ],
+        )
 
     def _build_ui(self):
         container = ttk.Frame(self.root)
@@ -365,8 +417,9 @@ class App:
 
         btns = ttk.Frame(left)
         btns.pack(fill="x", pady=(6, 0))
-        ttk.Button(btns, text="Remove Selected", command=self.remove_selected).pack(side="left")
-        ttk.Button(btns, text="Clear Entire List", command=self.clear_list).pack(side="left", padx=(8, 0))
+        ttk.Button(btns, text="Clear All", command=self.clear_list).pack(side="left")
+        ttk.Button(btns, text="Remove Selected", command=self.remove_selected).pack(side="left", padx=(8, 0))
+
 
         out = ttk.Frame(self.sc.inner, padding=(10, 0, 10, 10))
         out.pack(fill="x")
@@ -380,14 +433,57 @@ class App:
         toggles = ttk.Frame(self.sc.inner, padding=(10, 0, 10, 10))
         toggles.pack(fill="x")
 
-        ttk.Checkbutton(toggles, text="Recursive folder scan", variable=self.recursive,
-                        style=self._tog_style).pack(side="left")
-        ttk.Checkbutton(toggles, text="Preserve folder structure", variable=self.preserve_tree,
-                        style=self._tog_style).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(toggles, text="Preserve file names", variable=self.preserve_names,
-                        style=self._tog_style).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(toggles, text="Skip *_optimized*.svg in searches", variable=self.skip_outputs,
-                        style=self._tog_style).pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(
+            toggles,
+            text="Recursive folder scan",
+            variable=self.recursive,
+            style=self._tog_style,
+        ).pack(side="left")
+
+        ttk.Checkbutton(
+            toggles,
+            text="Preserve folder structure",
+            variable=self.preserve_tree,
+            style=self._tog_style,
+        ).pack(side="left", padx=(8, 0))
+
+        ttk.Checkbutton(
+            toggles,
+            text="Preserve file names",
+            variable=self.preserve_names,
+            style=self._tog_style,
+        ).pack(side="left", padx=(8, 0))
+
+        ttk.Checkbutton(
+            toggles,
+            text="Skip *_optimized*.svg in searches",
+            variable=self.skip_outputs,
+            style=self._tog_style,
+        ).pack(side="left", padx=(8, 0))
+
+        fmt_wrap = ttk.Frame(self.sc.inner, padding=(10, 6, 10, 10))
+        fmt_wrap.pack(fill="x", padx=10, pady=(0, 10))
+
+        ttk.Label(fmt_wrap, text="Output format").pack(anchor="w")
+
+        fmt = ttk.Frame(fmt_wrap)
+        fmt.pack(fill="x", pady=(6, 0))
+
+        ttk.Radiobutton(
+            fmt,
+            text="Optimized SVG (.svg)",
+            value="svg",
+            variable=self.output_mode,
+            style=self._radio_style,
+        ).pack(side="left")
+
+        ttk.Radiobutton(
+            fmt,
+            text="Optimized SVG (.svg) + SVGZ (.svgz)",
+            value="svgz",
+            variable=self.output_mode,
+            style=self._radio_style,
+        ).pack(side="left", padx=(8, 0))
 
         ttk.Label(self.sc.inner, textvariable=self.status, padding=(10, 6, 10, 6)).pack(fill="x")
 
@@ -399,6 +495,7 @@ class App:
 
         self.pb = ttk.Progressbar(bottom, variable=self.progress, maximum=100.0)
         self.pb.pack(side="left", fill="x", expand=True, padx=(10, 0))
+
     def _set_drop_hover(self, on: bool) -> None:
         if not hasattr(self, "drop_label"):
             return
@@ -509,7 +606,11 @@ class App:
 
         if folders:
             for folder in folders:
-                svgs = find_svgs_in_folder(folder, recursive=self.recursive.get(), skip_outputs=self.skip_outputs.get())
+                svgs = find_svgs_in_folder(
+                    folder,
+                    recursive=self.recursive.get(),
+                    skip_outputs=self.skip_outputs.get(),
+                )
                 self._add_paths(svgs)
 
         if files:
@@ -522,13 +623,13 @@ class App:
     def add_files(self):
         picked = system_pick_files("Select SVG files", patterns=["*.svg"])
         if picked is None:
-            # System picker unavailable -> fallback
-            picked = list(filedialog.askopenfilenames(
-                title="Select SVG files",
-                filetypes=[("SVG files", "*.svg"), ("All files", "*.*")],
-            ))
+            picked = list(
+                filedialog.askopenfilenames(
+                    title="Select SVG files",
+                    filetypes=[("SVG files", "*.svg"), ("All files", "*.*")],
+                )
+            )
         elif picked == []:
-            # User cancelled system picker -> do nothing
             return
 
         if picked:
@@ -539,12 +640,16 @@ class App:
         if folder is None:
             folder = filedialog.askdirectory(title="Select a folder containing SVGs")
         elif folder == "":
-            return  # cancelled
+            return
 
         if not folder:
             return
 
-        svgs = find_svgs_in_folder(Path(folder), recursive=self.recursive.get(), skip_outputs=self.skip_outputs.get())
+        svgs = find_svgs_in_folder(
+            Path(folder),
+            recursive=self.recursive.get(),
+            skip_outputs=self.skip_outputs.get(),
+        )
         if not svgs:
             messagebox.showinfo("No SVGs found", "No .svg files were found in the selected folder.")
             return
@@ -555,7 +660,7 @@ class App:
         if folder is None:
             folder = filedialog.askdirectory(title="Choose output folder")
         elif folder == "":
-            return  # cancelled
+            return
 
         if folder:
             self.output_dir.set(str(Path(folder)))
@@ -609,8 +714,9 @@ class App:
         threading.Thread(target=self._run_worker, args=(out_dir,), daemon=True).start()
 
     def _run_worker(self, out_dir: Path):
-        vertical = True
+        vertical = True  # keep behavior consistent with your previous GUI
         preserve_tree = self.preserve_tree.get()
+        want_svgz = self.output_mode.get() == "svgz"
 
         common_root = None
         if preserve_tree:
@@ -623,24 +729,33 @@ class App:
         total = len(self.files)
 
         for idx, inp in enumerate(self.files, start=1):
-            try:
-                if self.preserve_names.get():
-                    out_name = inp.name
-                else:
-                    out_name = inp.stem + "_optimized" + inp.suffix
-
-                if preserve_tree and common_root is not None:
+            out_svg = out_dir / (inp.name if self.preserve_names.get() else (inp.stem + "_optimized" + inp.suffix))
+            if preserve_tree and common_root is not None:
+                try:
                     rel_parent = inp.parent.relative_to(common_root)
-                    out_path = out_dir / rel_parent / out_name
-                else:
-                    out_path = out_dir / out_name
+                    out_svg = out_dir / rel_parent / out_svg.name
+                except Exception:
+                    pass
 
-                out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_svgz: Path | None = None
 
-                rect_count, bytes_out = optimize_svg_rects(inp, out_path, vertical_merge=vertical)
-                results.append(JobResult(inp, out_path, True, f"OK | rects={rect_count:,} | bytes={bytes_out:,}"))
+            try:
+                out_svg.parent.mkdir(parents=True, exist_ok=True)
+
+                svg_bytes, rect_count = optimize_svg_rects_bytes(inp, vertical_merge=vertical)
+                out_svg.write_bytes(svg_bytes)
+
+                msg = f"OK | rects={rect_count:,} | svg={len(svg_bytes):,} bytes"
+
+                if want_svgz:
+                    out_svgz = out_svg.with_suffix(out_svg.suffix + "z")
+                    bytes_svgz = write_svgz(svg_bytes, out_svgz, compresslevel=9)
+                    msg += f" | svgz={bytes_svgz:,} bytes"
+
+                results.append(JobResult(inp, out_svg, out_svgz, True, msg))
+
             except Exception as e:
-                results.append(JobResult(inp, out_dir / (inp.stem + "_FAILED.svg"), False, str(e)))
+                results.append(JobResult(inp, out_svg, out_svgz, False, str(e)))
 
             pct = (idx / total) * 100.0
             self.root.after(0, self.progress.set, pct)
@@ -653,10 +768,11 @@ class App:
         fail = len(results) - ok
 
         log_path = out_dir / "svg_optimizer_log.txt"
-        lines = [
-            f"{'OK  ' if r.ok else 'FAIL'} | {r.input_path} -> {r.output_path} | {r.message}"
-            for r in results
-        ]
+        lines = []
+        for r in results:
+            out2 = f" | {r.output_svgz}" if r.output_svgz else ""
+            lines.append(f"{'OK  ' if r.ok else 'FAIL'} | {r.input_path} -> {r.output_svg}{out2} | {r.message}")
+
         try:
             log_path.write_text("\n".join(lines), encoding="utf-8")
         except Exception:
@@ -686,4 +802,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

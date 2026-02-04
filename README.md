@@ -9,6 +9,7 @@ This project consists of:
 
 * a **GUI frontend** (`svg_optimizer_gui.py`)
 * a **core optimizer** (`svg_pixel_rect_optimizer.py`)
+* simple executables for Windows, Mac, and Linux Ubuntu 22.04
 
 ---
 
@@ -18,11 +19,20 @@ This tool is designed for SVGs that represent **pixel art**, where each pixel (o
 
 It is **not** a general-purpose SVG optimizer.
 
+This tool **does not**:
+
+* Simplify paths
+* Optimize curves
+* Reduce gradients
+* Rewrite arbitrary SVGs
+
 Typical use cases:
 
 * Game sprites and tiles
 * Pixel-perfect UI assets
 * Exported SVG pixel art from editors
+
+It is purpose-built for **rect-based pixel art SVGs**.
 
 ---
 
@@ -37,7 +47,8 @@ The optimizer performs the following steps:
 
   * **Horizontally** into runs
   * **Vertically** into stacks
-* Emits a clean SVG:
+
+* Emits a clean SVG and/or SVGZ:
 
   * One `<g>` element
   * `shape-rendering="crispEdges"` on the root
@@ -61,6 +72,7 @@ The optimizer performs the following steps:
 * Optional preservation of folder structure
 * Optional preservation of original file names
 * Skips already-optimized files (`*_optimized*.svg`)
+* Choice between SVG or SVG + SVGZ
 * Progress bar + per-run log file
 
 ---
@@ -93,8 +105,6 @@ The optimizer performs the following steps:
   * Entire folders (recursively scanned)
 * Dropping a folder onto the **Output field** sets the output directory
 * Drag & drop is enabled when `tkinterdnd2` is installed
-
-If unavailable, the GUI still functions normally without drag & drop.
 
 ---
 
@@ -129,9 +139,7 @@ Log entries include:
 
 ---
 
-## Running from Source
-
-### Requirements
+## Requirements
 
 * Python 3.10+
 * Tkinter
@@ -147,20 +155,3 @@ python3 svg_optimizer_gui.py
 ```
 
 ---
-
-## Not a Vector Optimizer
-
-This tool **does not**:
-
-* Simplify paths
-* Optimize curves
-* Reduce gradients
-* Rewrite arbitrary SVGs
-
-It is purpose-built for **rect-based pixel art SVGs**.
-
----
-
-## License
-
-MIT (or your chosen license)
