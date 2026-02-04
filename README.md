@@ -38,6 +38,10 @@ It is purpose-built for **rect-based pixel art SVGs**.
 
 ## Core Optimizer (`svg_pixel_rect_optimizer.py`)
 
+* Safe to run **multiple times** on the same file
+* Will not break SVGs that already contain merged rectangles
+* Designed for deterministic, stable output
+
 The optimizer performs the following steps:
 
 * Normalizes `fill` and `opacity`
@@ -47,18 +51,13 @@ The optimizer performs the following steps:
 
   * **Horizontally** into runs
   * **Vertically** into stacks
+  * **Connected Paths** merges connected runs and stacks into a filled path
 
 * Emits a clean SVG and/or SVGZ:
 
   * One `<g>` element
   * `shape-rendering="crispEdges"` on the root
   * Minimal attributes per `<rect>`
-
-### Important behavior
-
-* Safe to run **multiple times** on the same file
-* Will not break SVGs that already contain merged rectangles
-* Designed for deterministic, stable output
 
 ---
 
@@ -71,8 +70,9 @@ The optimizer performs the following steps:
 * Recursive folder scanning
 * Optional preservation of folder structure
 * Optional preservation of original file names
+* Optional choice between merged paths or just runs and stacks
 * Skips already-optimized files (`*_optimized*.svg`)
-* Choice between SVG or SVG + SVGZ
+* Choice between SVG, SVG + SVGZ, or just SVGZ
 * Progress bar + per-run log file
 
 ---
