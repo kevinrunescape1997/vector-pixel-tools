@@ -86,11 +86,16 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
+
+          ARGS=(--noconfirm --clean --windowed --name "$APP_NAME" svg_optimizer_gui.py)
           if [[ "$INCLUDE_DND" == "true" ]]; then
             ARGS+=(--hidden-import tkinterdnd2 --collect-data tkinterdnd2 --collect-binaries tkinterdnd2)
           fi
+
           pyinstaller "${ARGS[@]}"
+
+          zip -r "${APP_NAME}-macOS.zip" "dist/${APP_NAME}.app"
+
 
       - name: Upload build artifact (macOS)
         if: runner.os == 'macOS'
