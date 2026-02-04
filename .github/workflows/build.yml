@@ -58,7 +58,9 @@ jobs:
         shell: pwsh
         run: |
           $args = @("--noconfirm","--clean","--windowed","--onefile","--name",$env:APP_NAME,"svg_optimizer_gui.py")
-          if ($env:INCLUDE_DND -eq "true") { $args += @("--collect-data","tkinterdnd2") }
+          if ($env:INCLUDE_DND -eq "true") {
+            $args += @("--hidden-import","tkinterdnd2","--collect-data","tkinterdnd2","--collect-binaries","tkinterdnd2")
+          }
           pyinstaller @args
           Compress-Archive -Path "dist\$env:APP_NAME.exe" -DestinationPath "$env:APP_NAME-Windows.zip" -Force
 
@@ -76,10 +78,11 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          ARGS=(--noconfirm --clean --windowed --name "$APP_NAME" svg_optimizer_gui.py)
-          if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
+          ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
+          if [[ "$INCLUDE_DND" == "true" ]]; then
+            ARGS+=(--hidden-import tkinterdnd2 --collect-data tkinterdnd2 --collect-binaries tkinterdnd2)
+          fi
           pyinstaller "${ARGS[@]}"
-          zip -r "${APP_NAME}-macOS.zip" "dist/${APP_NAME}.app"
 
       - name: Upload artifact (macOS)
         if: runner.os == 'macOS'
@@ -97,9 +100,10 @@ jobs:
           set -euxo pipefail
 
           ARGS=(--noconfirm --clean --windowed --onefile --name "$APP_NAME" svg_optimizer_gui.py)
-          if [[ "$INCLUDE_DND" == "true" ]]; then ARGS+=(--collect-data tkinterdnd2); fi
+          if [[ "$INCLUDE_DND" == "true" ]]; then
+            ARGS+=(--hidden-import tkinterdnd2 --collect-data tkinterdnd2 --collect-binaries tkinterdnd2)
+          fi
           pyinstaller "${ARGS[@]}"
-          chmod +x "dist/${APP_NAME}"
 
           APPDIR="${APP_NAME}.AppDir"
           rm -rf "$APPDIR"
