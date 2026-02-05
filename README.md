@@ -2,10 +2,10 @@
 
 A cross‑platform suite of tools for pixel‑art workflows built around SVGs, with a unified launcher:
 
-- Bitmap → SVG Converter
-- SVG Pixel‑Rect Optimizer
-- SVG → EPS/PDF/TIFF/PNG Exporter
-- Pixel Tools Launcher (single‑instance, dark theme)
+- Bitmap SVG Converter
+- SVG Pixel Optimizer
+- SVG Exporter
+- Pixel Tools Launcher
 
 This suite is ideal for rect‑based pixel art SVGs and vector export pipelines. It is not a general‑purpose SVG path optimizer.
 
@@ -54,7 +54,7 @@ python pixel_svg_optimizer.py input.svg --paths --minify --svgz --zopfli
 
 ---
 
-### 3) SVG → EPS/PDF/TIFF/PNG Exporter
+### 3) SVG to EPS/PDF/TIFF/PNG Exporter
 - Files: `GUI_svg_exporter.py` (GUI), `svg_exporter.py` (CLI/core)
 - Exports SVG/SVGZ into EPS, PDF, TIFF, or PNG.
 - Backends:
