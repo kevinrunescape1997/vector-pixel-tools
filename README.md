@@ -2,10 +2,10 @@
 
 A cross‑platform suite of tools for pixel‑art workflows built around SVGs, with a unified launcher:
 
+- Vector Pixel Tools Launcher
 - Bitmap SVG Converter
 - SVG Pixel Optimizer
 - SVG Exporter
-- Pixel Tools Launcher
 
 This suite is ideal for rect‑based pixel art SVGs and vector export pipelines. It is not a general‑purpose SVG path optimizer.
 
