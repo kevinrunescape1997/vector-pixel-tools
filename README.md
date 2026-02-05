@@ -1,155 +1,167 @@
-# SVG Pixel-Rect Optimizer (GUI)
+# Vector Pixel Tools
 
-Cross-platform GUI tool for optimizing **pixel art stored as SVG `<rect>` elements**.
-It reduces file size and rect count by merging adjacent pixels while preserving visual fidelity.
+A cross‑platform suite of tools for pixel‑art workflows built around SVGs, with a unified launcher:
 
-This project consists of:
+- Bitmap → SVG Converter
+- SVG Pixel‑Rect Optimizer
+- SVG → EPS/PDF/TIFF/PNG Exporter
+- Pixel Tools Launcher (single‑instance, dark theme)
 
-* a **GUI frontend** (`svg_optimizer_gui.py`)
-* a **core optimizer** (`svg_pixel_rect_optimizer.py`)
-* simple executables for Windows, Mac, and Linux Ubuntu 22.04
-
----
-
-## What This Tool Is For
-
-This tool is designed for SVGs that represent **pixel art**, where each pixel (or group of pixels) is drawn using `<rect>` elements.
-
-It is **not** a general-purpose SVG optimizer.
-
-This tool **does not**:
-
-* Simplify paths
-* Optimize curves
-* Reduce gradients
-* Rewrite arbitrary SVGs
-
-Typical use cases:
-
-* Game sprites and tiles
-* Pixel-perfect UI assets
-* Exported SVG pixel art from editors
-
-It is purpose-built for **rect-based pixel art SVGs**.
+This suite is ideal for rect‑based pixel art SVGs and vector export pipelines. It is not a general‑purpose SVG path optimizer.
 
 ---
 
-## Core Optimizer (`svg_pixel_rect_optimizer.py`)
+## Tools Overview
 
-* Safe to run **multiple times** on the same file
-* Will not break SVGs that already contain merged rectangles
-* Designed for deterministic, stable output
+### 1) Bitmap → SVG Converter
+- Files: `GUI_bitmap_converter.py` (GUI), `bitmap_svg_converter.py` (CLI/core)
+- Converts many bitmap formats (PNG/JPG/GIF/BMP/TIFF/WebP/AVIF/HEIF/HEIC/JXL/FITS/DICOM/OpenEXR/HDR/RGBE/PFM/SGI RGB/DDS/KTX/KTX2/RAW camera formats…) into per‑pixel SVG using `<rect>` per pixel.
+- Multi‑frame formats export all frames when supported (GIF/TIFF/WebP/AVIF/HEIF/JXL).
+- Live progress with per‑row updates and overall percent/file counter overlay.
 
-The optimizer performs the following steps:
+Requirements:
+- pip install pillow
+- Optional backends (broader format support):
+  - pip install imageio numpy
+  - pip install pillow-heif pillow-avif-plugin pillow-jxl-plugin
+  - pip install pydicom
+  - pip install astropy
+  - pip install rawpy
+- Optional for drag & drop:
+  - pip install tkinterdnd2
 
-* Normalizes `fill` and `opacity`
-* Expands any `<rect>` with `width > 1` or `height > 1` into per-pixel coverage
-  (prevents corruption when re-optimizing already-merged SVGs)
-* Merges pixels:
-
-  * **Horizontally** into runs
-  * **Vertically** into stacks
-  * **Connected Paths** merges connected runs and stacks into a filled path
-
-* Emits a clean SVG and/or SVGZ:
-
-  * One `<g>` element
-  * `shape-rendering="crispEdges"` on the root
-  * Minimal attributes per `<rect>`
+CLI examples:
+```bash
+python bitmap_svg_converter.py input.png -o output.svg
+python bitmap_svg_converter.py input.gif -o output.svg --frame 0
+```
 
 ---
 
-## GUI Application (`svg_optimizer_gui.py`)
+### 2) SVG Pixel‑Rect Optimizer
+- Files: `GUI_svg_optimizer.py` (GUI), `pixel_svg_optimizer.py` (CLI/core)
+- Computes final per‑pixel RGBA via source‑over compositing in DOM order.
+- Emits merged rectangles (horizontal + optional vertical stacking) or connected `<path>` shapes for like‑colored pixels.
+- Post‑processing can merge same‑color shapes, sort/minify attributes, and remove defaults.
+- Streaming rect optimizer for very large SVGs (>200 MB) via `lxml` iterparse to reduce memory use.
+- GUI automatically disables path mode for very large inputs and falls back to streaming rects for stability.
 
-### Features
+CLI examples:
+```bash
+python pixel_svg_optimizer.py input.svg
+python pixel_svg_optimizer.py input.svg --paths --minify --svgz --zopfli
+```
 
-* Drag & drop SVG files or folders
-* Batch processing
-* Recursive folder scanning
-* Optional preservation of folder structure
-* Optional preservation of original file names
-* Optional choice between merged paths or just runs and stacks
-* Skips already-optimized files (`*_optimized*.svg`)
-* Choice between SVG, SVG + SVGZ, or just SVGZ
-* Progress bar + per-run log file
+---
+
+### 3) SVG → EPS/PDF/TIFF/PNG Exporter
+- Files: `GUI_svg_exporter.py` (GUI), `svg_exporter.py` (CLI/core)
+- Exports SVG/SVGZ into EPS, PDF, TIFF, or PNG.
+- Backends:
+  - Preferred: Inkscape CLI (fast, robust vector output for PDF/EPS; raster for PNG)
+  - Fallbacks: CairoSVG (svg2pdf/svg2png/svg2ps), Ghostscript (PDF→EPS), Pillow (PNG→TIFF)
+- DPI is supported for PNG/TIFF.
+- GUI includes preserve‑folder‑structure option, custom naming/stem, live naming preview, and a percent/file counter overlay.
+
+Requirements:
+- Inkscape (preferred; install via OS packages)
+- pip install cairosvg pillow
+- Ghostscript for EPS fallback (install via OS packages)
+
+CLI examples:
+```bash
+python svg_exporter.py input.svg --format pdf
+python svg_exporter.py input.svgz --format eps
+python svg_exporter.py input.svg --format png --dpi 300
+python svg_exporter.py input.svg --format tiff -o out.tiff --dpi 300
+```
+
+---
+
+## Pixel Tools Launcher
+
+- File: `vector_pixel_tools_launcher.py`
+- Single‑instance launcher window with buttons to open:
+  - Bitmap → SVG Converter
+  - SVG Pixel Optimizer
+  - SVG Exporter
+- Uses a small TCP server on `127.0.0.1:51262` to bring an existing launcher window to the front if a new instance is started.
+- Styled with a dark theme consistent across the GUIs.
+
+Run:
+```bash
+python vector_pixel_tools_launcher.py
+```
+
+---
+
+## GUI Features (common)
+
+- Drag & drop files/folders (optional via `tkinterdnd2`)
+- Batch processing with progress bar and percent/file counter overlay (e.g., “42.3% • File 3/12”)
+- Output folder selection with “Up” and native dialogs on Linux (Zenity/KDialog) when available
+- Optional preservation of folder structure for outputs
+- Custom name all + custom stem all, with live naming preview
+- Unified dark theme and consistent scrollbars
+- Summary dialog with OK/Failed counts and a log file link per run
 
 ---
 
 ## Platform Notes
 
-### Windows
-
-* Uses Tk dialogs
-* May show SmartScreen warnings (unsigned)
-
-### macOS
-
-* Uses native file dialogs
-* May require “Open Anyway” for unsigned apps
-
-### Linux
-
-* GUI **prefers native system dialogs** Zenity/KDialog
-* If neither is available, it **falls back to Tk’s file dialogs**.
-* Native dialogs avoid Tk’s built-in “Directory:” dropdown UX issues
+- Windows/macOS/Linux supported
+- Linux:
+  - GUIs prefer Zenity/KDialog when available; otherwise standard Tk dialogs
+  - Ensure Tk is available (e.g., `sudo apt-get install python3-tk`)
+- Python: 3.10+
 
 ---
 
-## Drag & Drop
+## Development
 
-* Supports dropping:
+- Python 3.10+
+- Tkinter (usually included with Python on Windows/macOS; install `python3-tk` on Linux)
+- Optional: `tkinterdnd2` for drag & drop
 
-  * Individual SVG files
-  * Entire folders (recursively scanned)
-* Dropping a folder onto the **Output field** sets the output directory
-* Drag & drop is enabled when `tkinterdnd2` is installed
-
----
-
-## Toggles Explained
-
-| Toggle                    | Description                                       |
-| ------------------------- | ------------------------------------------------- |
-| Recursive folder scan     | Scan subfolders when adding a directory           |
-| Preserve folder structure | Mirror input directory structure in output        |
-| Preserve file names       | Keep original file names (no `_optimized` suffix) |
-| Skip `_optimized` files   | Prevent re-adding previously optimized SVGs       |
-
----
-
-## Output
-
-* Output directory is user-selectable
-* Files are written as optimized SVGs
-* A log file is written per run:
-
-  ```
-  svg_optimizer_log.txt
-  ```
-
-Log entries include:
-
-* input path
-* output path
-* rect count
-* byte size
-* errors (if any)
-
----
-
-## Requirements
-
-* Python 3.10+
-* Tkinter
-* Optional (Linux):
-
-  * `zenity` or `kdialog`
-  * `tkinterdnd2`
-
-### Run
-
+Run any GUI:
 ```bash
-python3 svg_optimizer_gui.py
+python GUI_bitmap_converter.py
+python GUI_svg_optimizer.py
+python GUI_svg_exporter.py
+```
+
+Run the launcher:
+```bash
+python vector_pixel_tools_launcher.py
 ```
 
 ---
+
+## Build Artifacts (CI)
+
+GitHub Actions build platform‑specific launchers from the central entry point `vector_pixel_tools_launcher.py`:
+
+- Windows: single‑file `.exe` zipped
+- macOS: `.app` zipped
+- Linux: `.AppImage`
+
+Workflows:
+- `.github/workflows/build.yml` (on push to `main`)
+  - Optional input: `include_tkinterdnd2` to bundle drag & drop support
+- `.github/workflows/release.yml` (on tags `v*` or manual run)
+  - Inputs:
+    - `tag` (manual release tag, e.g., `v1.0.2`)
+    - `include_tkinterdnd2` to bundle drag & drop support
+  - Creates a GitHub Release and uploads assets (Windows zip, macOS zip, Linux AppImage, README)
+
+---
+
+## Local Build (PyInstaller)
+
+You can build locally with PyInstaller (see workflows for reference). Example (Windows one‑file):
+```bash
+pip install pyinstaller pillow
+# Optional drag & drop:
+pip install tkinterdnd2
+pyinstaller --noconfirm --clean --windowed --onefile --name vector_pixel_tools_launcher vector_pixel_tools_launcher.py
+```
