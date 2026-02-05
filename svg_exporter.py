@@ -12,11 +12,11 @@ Backends:
 - For EPS (fallback): PDF -> EPS via Ghostscript (eps2write)
 - For TIFF: PNG -> TIFF via Pillow
 
-Examples:
-  python svg_exporter.py input.svg --format pdf
-  python svg_exporter.py input.svgz --format eps
-  python svg_exporter.py *.svg --format png --dpi 300
-  python svg_exporter.py input.svg --format tiff -o out.tiff --dpi 300
+Notes:
+- EPS on Linux/macOS may require Ghostscript (gs) if Inkscape is unavailable.
+  Install with your package manager (e.g., apt-get install ghostscript, brew install ghostscript),
+  or install Inkscape and let the exporter use its native EPS/PDF export.
+- Windows builds may bundle Ghostscript under a 'ghostscript' folder next to the .exe.
 """
 
 import argparse
@@ -48,11 +48,44 @@ def which_inkscape() -> Optional[str]:
 
 
 def which_ghostscript() -> Optional[str]:
-    # Prefer gs on Unix, gswin64c/gswin32c on Windows
-    for cmd in ("gs", "gswin64c", "gswin32c"):
+    """
+    Find Ghostscript executable.
+
+    Order:
+    1) System PATH (gs, gswin64c, gswin32c, gs.exe)
+    2) Bundled location next to the packaged app: <exe_dir>/ghostscript/bin/<gs*>
+       - Windows builds in CI may include this.
+    """
+    # Prefer system PATH first
+    for cmd in ("gs", "gswin64c", "gswin32c", "gs.exe"):
         p = shutil.which(cmd)
         if p:
             return p
+
+    # Then look for a bundled Ghostscript next to the packaged app
+    try:
+        base = None
+        if getattr(sys, "frozen", False):
+            # PyInstaller/AppImage: executable directory
+            base = Path(sys.executable).resolve().parent
+        else:
+            # Dev mode: repo directory (allow local bundling for testing)
+            base = Path(__file__).resolve().parent
+        gs_bin = base / "ghostscript" / "bin"
+        candidates = [
+            gs_bin / "gswin64c.exe",
+            gs_bin / "gswin32c.exe",
+            gs_bin / "gs.exe",
+            gs_bin / "gs",  # *nix name (unlikely bundled, but checked)
+        ]
+        for c in candidates:
+            try:
+                if c.exists():
+                    return str(c)
+            except Exception:
+                pass
+    except Exception:
+        pass
     return None
 
 
@@ -81,7 +114,6 @@ def _inkscape_export(in_svg: Path, fmt: str, out_path: Path, dpi: Optional[int])
     inkscape = which_inkscape()
     if not inkscape:
         return False, "Inkscape not found in PATH."
-
     ensure_parent_dir(out_path)
     base_cmd = [inkscape, str(in_svg), "--export-filename", str(out_path)]
     type_map = {"eps": "eps", "pdf": "pdf", "png": "png"}
@@ -123,6 +155,14 @@ def _cairosvg_export(in_svg: Path, fmt: str, out_path: Path, dpi: Optional[int])
                 ok, msg = _ghostscript_pdf_to_eps(tmp_pdf, out_path)
                 if ok:
                     return True, "CairoSVG+Ghostscript OK: eps"
+                # If Ghostscript is missing, provide platform guidance in the message.
+                if "Ghostscript not found" in msg:
+                    return False, (
+                        "Ghostscript not found. On Linux/macOS, install ghostscript "
+                        "(e.g., apt-get install ghostscript or brew install ghostscript) "
+                        "or install Inkscape and use its native EPS export. "
+                        "On Windows builds, Ghostscript may be bundled in the zip under 'ghostscript/bin'."
+                    )
                 # Fallback to PS (rename to .eps); not strictly EPS, but often acceptable
                 tmp_ps = Path(td) / "tmp.ps"
                 cairosvg.svg2ps(url=str(in_svg), write_to=str(tmp_ps))
@@ -188,8 +228,6 @@ def convert_svg(in_svg: Path, fmt: str, out_path: Path, dpi: Optional[int] = Non
     if fmt in {"pdf", "png", "eps"}:
         ok, msg = _inkscape_export(in_svg, fmt, out_path, dpi)
         if ok:
-            if fmt == "tiff":  # not possible here
-                pass
             return True, msg
 
     # TIFF via Inkscape -> PNG -> Pillow if Inkscape present
@@ -203,9 +241,7 @@ def convert_svg(in_svg: Path, fmt: str, out_path: Path, dpi: Optional[int] = Non
                     ok_tif, msg_tif = _pillow_png_to_tiff(tmp_png, out_path)
                     if ok_tif:
                         return True, f"Inkscape+Pillow OK: tiff"
-                    else:
-                        # fallback to CairoSVG path below
-                        pass
+                # fall through to CairoSVG path below
 
     # Fallback to CairoSVG-based conversions
     ok, msg = _cairosvg_export(in_svg, fmt, out_path, dpi)
@@ -249,6 +285,9 @@ def main():
                 size = out_path.stat().st_size if out_path.exists() else 0
                 print(f"Wrote: {out_path} | bytes: {size:,} | {msg}")
             else:
+                # Add friendly guidance when EPS fails and neither Inkscape nor Ghostscript helped
+                if fmt == "eps" and "Ghostscript not found" in msg:
+                    msg += " | Tip: Install Inkscape or Ghostscript to enable EPS export."
                 print(f"Failed: {inp} -> {out_path} | {msg}")
         except Exception as e:
             print(f"Failed: {inp} -> {out_path} | {e}")

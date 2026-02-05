@@ -54,11 +54,25 @@ jobs:
           sudo apt-get install -y python3-tk appstream
 
       - name: Install build dependencies
-        run: python -m pip install pyinstaller pillow
+        run: python -m pip install pyinstaller pillow cairosvg
 
       - name: Install tkinterdnd2 (optional)
         if: env.INCLUDE_DND == 'true'
         run: python -m pip install tkinterdnd2
+
+      - name: Install Ghostscript (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ghostscript -y
+          $gsRoot = Get-ChildItem -Directory "C:\Program Files\gs" | Sort-Object -Property Name -Descending | Select-Object -First 1
+          if (-not $gsRoot) { throw "Ghostscript install not found in C:\Program Files\gs" }
+          New-Item -ItemType Directory -Force -Path "dist\ghostscript" | Out-Null
+          Copy-Item -Recurse "$($gsRoot.FullName)\bin" "dist\ghostscript\bin"
+          Copy-Item -Recurse "$($gsRoot.FullName)\lib" "dist\ghostscript\lib"
+          if (Test-Path "$($gsRoot.FullName)\LICENSE") {
+            Copy-Item "$($gsRoot.FullName)\LICENSE" "dist\ghostscript\LICENSE"
+          }
 
       # Windows -> zip exe
       - name: Build (Windows) -> zip exe
@@ -74,13 +88,19 @@ jobs:
             "--hidden-import","bitmap_svg_converter",
             "--hidden-import","pixel_svg_optimizer",
             "--hidden-import","svg_exporter",
+            # Bundle CairoSVG and core deps explicitly
+            "--hidden-import","cairosvg",
+            "--hidden-import","cairocffi",
+            "--hidden-import","cssselect2",
+            "--hidden-import","tinycss2",
+            "--hidden-import","defusedxml",
             "vector_pixel_tools_launcher.py"
           )
           if ($env:INCLUDE_DND -eq "true") {
             $args += @("--hidden-import","tkinterdnd2","--collect-data","tkinterdnd2","--collect-binaries","tkinterdnd2")
           }
           pyinstaller @args
-          Compress-Archive -Path "dist\$env:APP_NAME.exe" -DestinationPath "$env:APP_NAME-Windows.zip" -Force
+          Compress-Archive -Path "dist\$env:APP_NAME.exe","dist\ghostscript" -DestinationPath "$env:APP_NAME-Windows.zip" -Force
 
       - name: Upload build artifact (Windows)
         if: runner.os == 'Windows'
@@ -103,6 +123,12 @@ jobs:
                 --hidden-import bitmap_svg_converter
                 --hidden-import pixel_svg_optimizer
                 --hidden-import svg_exporter
+                # Bundle CairoSVG and core deps explicitly
+                --hidden-import cairosvg
+                --hidden-import cairocffi
+                --hidden-import cssselect2
+                --hidden-import tinycss2
+                --hidden-import defusedxml
                 vector_pixel_tools_launcher.py)
           if [[ "$INCLUDE_DND" == "true" ]]; then
             ARGS+=(--hidden-import tkinterdnd2 --collect-data tkinterdnd2 --collect-binaries tkinterdnd2)
@@ -110,7 +136,7 @@ jobs:
 
           pyinstaller "${ARGS[@]}"
 
-          zip -r "${APP_NAME}-macOS.zip" "dist/${APP_NAME}.app"
+          zip -r "${APPNAME}-macOS.zip" "dist/${APP_NAME}.app"
 
       - name: Upload build artifact (macOS)
         if: runner.os == 'macOS'
@@ -133,6 +159,12 @@ jobs:
                 --hidden-import bitmap_svg_converter
                 --hidden-import pixel_svg_optimizer
                 --hidden-import svg_exporter
+                # Bundle CairoSVG and core deps explicitly
+                --hidden-import cairosvg
+                --hidden-import cairocffi
+                --hidden-import cssselect2
+                --hidden-import tinycss2
+                --hidden-import defusedxml
                 vector_pixel_tools_launcher.py)
           if [[ "$INCLUDE_DND" == "true" ]]; then
             ARGS+=(--hidden-import tkinterdnd2 --collect-data tkinterdnd2 --collect-binaries tkinterdnd2)
